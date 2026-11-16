@@ -1,0 +1,11 @@
+**/bin/
+**/obj/
+**/.vs/
+**/.idea/
+**/TestResults/
+**/.git/
+**/.env
+**/.env.*
+**/appsettings*.json
+**/*.user
+**/*.suo

@@ -1,0 +1,53 @@
+# نشر الإنتاج على السيرفر خلف Caddy (شبكة proxy الخارجية).
+# التشغيل: docker compose -f docker-compose.prod.yml --env-file .env up -d --build
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: quran-center-api:prod
+    container_name: mushka-api
+    restart: unless-stopped
+    init: true
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:8080
+      HttpsRedirection__Enabled: "false"
+      ForwardedHeaders__Enabled: "true"
+      ConnectionStrings__DefaultConnection: Host=db;Port=5432;Database=halaqa_db;Username=halaqa_admin;Password=${DB_PASSWORD:?Set DB_PASSWORD in .env}
+      Jwt__Secret: ${JWT_SECRET:?Set JWT_SECRET in .env}
+      Cors__AllowedOrigins__0: ${FRONTEND_ORIGIN:?Set FRONTEND_ORIGIN in .env}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - proxy
+      - internal
+    security_opt:
+      - no-new-privileges:true
+
+  db:
+    image: postgres:18
+    container_name: halaqa-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: halaqa_db
+      POSTGRES_USER: halaqa_admin
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U halaqa_admin -d halaqa_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - internal
+
+networks:
+  proxy:
+    external: true
+  internal:
+
+volumes:
+  pgdata:

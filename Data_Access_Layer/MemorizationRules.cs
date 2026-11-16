@@ -1,0 +1,45 @@
+namespace Data_Access_Layer
+{
+    /// <summary>قواعد سجلات الحفظ والمراجعة (الحدود اليومية والتاريخ وعدد آيات السور).</summary>
+    public static class MemorizationRules
+    {
+        // قيم عمود Type في قاعدة البيانات (قيد CHECK يقبل 1 و2 فقط).
+        // إن كان ترتيبك في القاعدة معكوساً فبدّل القيمتين هنا وفي الفرونت (RECORD_TYPE).
+        public const short TypeMemorization = 1;
+        public const short TypeReview = 2;
+
+        // قيم عمود Source في قاعدة البيانات (قيد CHECK يقبل 1 و2 فقط). 1 = إدخال يدوي من المعلم.
+        public const short SourceManual = 1;
+
+        /// <summary>أقصى عدد سجلات (جلسات) حفظ جديد للطالب في اليوم.</summary>
+        public const int MaxMemorizationPerDay = 1;
+
+        /// <summary>أقصى عدد سجلات (جلسات) مراجعة للطالب في اليوم.</summary>
+        public const int MaxReviewPerDay = 2;
+
+        public static int MaxPerDay(short type) =>
+            type == TypeMemorization ? MaxMemorizationPerDay : MaxReviewPerDay;
+
+        /// <summary>تاريخ اليوم بتوقيت الرياض (UTC+3 ثابت بلا توقيت صيفي).</summary>
+        public static DateOnly TodayInRiyadh() =>
+            DateOnly.FromDateTime(DateTime.UtcNow.AddHours(3));
+
+        // عدد آيات السور ١–١١٤ (مصحف المدينة، رواية حفص)، المجموع ٦٢٣٦.
+        private static readonly short[] AyahCounts =
+        {
+            7, 286, 200, 176, 120, 165, 206, 75, 129, 109, 123, 111, 43, 52, 99, 128, 111, 110, 98, 135,
+            112, 78, 118, 64, 77, 227, 93, 88, 69, 60, 34, 30, 73, 54, 45, 83, 182, 88, 75, 85,
+            54, 53, 89, 59, 37, 35, 38, 29, 18, 45, 60, 49, 62, 55, 78, 96, 29, 22, 24, 13,
+            14, 11, 11, 18, 12, 12, 30, 52, 52, 44, 28, 28, 20, 56, 40, 31, 50, 40, 46, 42,
+            29, 19, 36, 25, 22, 17, 19, 26, 30, 20, 15, 21, 11, 8, 8, 19, 5, 8, 8, 11,
+            11, 8, 3, 9, 5, 4, 7, 3, 6, 3, 5, 4, 5, 6
+        };
+
+        public static int GetAyahCount(int surahNumber) =>
+            surahNumber >= 1 && surahNumber <= AyahCounts.Length ? AyahCounts[surahNumber - 1] : 0;
+
+        public static string LimitMessage(short type) => type == TypeMemorization
+            ? "تم تسجيل حفظ جديد لهذا الطالب اليوم، ولا يُسمح بأكثر من سجل حفظ واحد في اليوم."
+            : "بلغ هذا الطالب الحد الأقصى لسجلات المراجعة اليوم (سجلان)، ولا يمكن إضافة المزيد.";
+    }
+}

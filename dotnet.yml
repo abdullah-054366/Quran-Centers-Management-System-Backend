@@ -22,5 +22,8 @@ jobs:
       - name: Restore dependencies
         run: dotnet restore QuranCenterManager_API.slnx
 
+      - name: Build and check warnings
+        run: dotnet build QuranCenterManager_API.slnx --configuration Release --warnaserror
+
       - name: Build
         run: dotnet build QuranCenterManager_API.slnx --no-restore --configuration Release
