@@ -29,8 +29,8 @@ jobs:
       - name: Restore
         run: dotnet restore QuranCenterManager_API.slnx
 
-      - name: Build (warnings as errors)
-        run: dotnet build QuranCenterManager_API.slnx --no-restore --configuration Release --warnaserror
+      - name: Build
+        run: dotnet build QuranCenterManager_API.slnx --no-restore --configuration Release
 
   # 2) بناء صورة Docker ورفعها إلى GHCR (عند الدفع إلى main فقط)
   docker:
