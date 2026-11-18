@@ -1,4 +1,4 @@
-using Business_Layer;
+﻿using Business_Layer;
 using Data_Access_Layer;
 using Data_Access_Layer.Data;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -20,6 +20,9 @@ using Microsoft.AspNetCore.HttpOverrides;
 
 // Create the application builder.
 var builder = WebApplication.CreateBuilder(args);
+
+// أسرار التشغيل المحلي (سلسلة الاتصال و Jwt:Secret) في ملف لا يُرفع إلى Git.
+builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true);
 
 
 
@@ -46,6 +49,12 @@ builder.Services.AddScoped<MemorizationBusinessLayer>();
 
 builder.Services.AddScoped<MemorizationPlanData>();
 builder.Services.AddScoped<MemorizationPlanBusinessLayer>();
+
+builder.Services.AddScoped<SettingsData>();
+builder.Services.AddScoped<SettingsBusinessLayer>();
+
+builder.Services.AddScoped<AuditData>();
+builder.Services.AddScoped<AuditBusinessLayer>();
 
 builder.Services.AddScoped<HalaqaData>();
 builder.Services.AddScoped<HalaqaBusinessLayer>();

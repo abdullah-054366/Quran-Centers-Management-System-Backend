@@ -5,3 +5,6 @@ obj/
 .env.*
 !.env.docker.example
 !.env.prod.example
+
+# أسرار التشغيل المحلي
+appsettings.Local.json

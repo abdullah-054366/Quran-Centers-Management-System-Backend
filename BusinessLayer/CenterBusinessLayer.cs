@@ -50,6 +50,31 @@ namespace Business_Layer
         }
 
 
+        public Task<CenterDTO?> UpdateCenterName(int centerId, string centerName)
+        {
+            return _centerData.UpdateCenterName(centerId, centerName);
+        }
+
+        public Task<CenterDTO?> RegenerateCenterCode(int centerId)
+        {
+            return _centerData.RegenerateCenterCode(centerId);
+        }
+
+        public Task<CenterDeletionSummaryDTO?> GetDeletionSummary(int centerId)
+        {
+            return _centerData.GetDeletionSummary(centerId);
+        }
+
+        public Task<CenterOverviewDTO?> GetCenterOverview(int centerId)
+        {
+            return _centerData.GetCenterOverview(centerId);
+        }
+
+        public Task<PlatformOverviewDTO> GetPlatformOverview()
+        {
+            return _centerData.GetPlatformOverview();
+        }
+
         public async Task<bool> DeleteCenter(int centerId)
         {
             return await _centerData.DeleteCenter(centerId);

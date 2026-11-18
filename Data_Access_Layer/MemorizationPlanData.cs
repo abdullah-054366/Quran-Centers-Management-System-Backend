@@ -1,4 +1,4 @@
-using Data_Access_Layer.Data;
+﻿using Data_Access_Layer.Data;
 using Data_Access_Layer.DTOs;
 using Data_Access_Layer.Models;
 using Microsoft.EntityFrameworkCore;
@@ -86,9 +86,10 @@ namespace Data_Access_Layer
             int planId,
             bool isActive,
             int? centerId,
-            int? teacherId)
+            int? teacherId,
+            int? studentId = null)
         {
-            var plan = await GetScopedPlans(centerId, teacherId, asNoTracking: false)
+            var plan = await GetScopedPlans(centerId, teacherId, asNoTracking: false, studentId: studentId)
                 .FirstOrDefaultAsync(item => item.MemorizationPlanId == planId);
 
             if (plan == null)
@@ -98,7 +99,7 @@ namespace Data_Access_Layer
             plan.UpdatedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync();
 
-            return await GetByIdAsync(planId, centerId, teacherId);
+            return await GetByIdAsync(planId, centerId, teacherId, studentId);
         }
 
         private IQueryable<MemorizationPlan> GetScopedPlans(

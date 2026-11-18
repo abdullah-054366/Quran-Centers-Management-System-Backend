@@ -23,6 +23,11 @@ namespace Data_Access_Layer.DTOs
         public string? PhoneNumber { get; set; }
         public bool IsActive { get; set; } = true;
 
+        // حقول للعرض فقط (تُملأ في قائمة المستخدمين).
+        public string? RoleName { get; set; }
+        public string? CenterName { get; set; }
+        public DateTime? CreatedAt { get; set; }
+
 
         public UserDTO(int userId , int roleId , int? centerId, string firstName, string lastName, string email, string? password, string? phoneNumber, bool isActive )
         {
@@ -52,3 +57,17 @@ namespace Data_Access_Layer.DTOs
 
 
     
+
+namespace Data_Access_Layer.DTOs
+{
+    public sealed class RoleDTO
+    {
+        public int RoleId { get; set; }
+        public string RoleName { get; set; } = string.Empty;
+    }
+
+    public sealed class UserStatusDTO
+    {
+        public bool IsActive { get; set; }
+    }
+}

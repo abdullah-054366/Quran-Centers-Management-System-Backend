@@ -1,4 +1,4 @@
-using Data_Access_Layer;
+﻿using Data_Access_Layer;
 using Data_Access_Layer.DTOs;
 
 namespace Business_Layer;
@@ -38,6 +38,7 @@ public class UserBusinessLayer
         this.Email = UDTO.Email;
         this.PhoneNumber = UDTO.PhoneNumber;
         this.Password = UDTO.Password;
+        this.IsActive = UDTO.IsActive;
         Mode = cMode;
     }
 
@@ -122,6 +123,18 @@ public class UserBusinessLayer
     {
         return _userData.UpdatePassword(userId, newPassword);
     }
+
+    public Task<bool> UpdateUserAsync(UserDTO input) => _userData.UpdateUser(input);
+
+    public Task<List<RoleDTO>> GetRoles() => _userData.GetRoles();
+
+    public Task<string?> GetRoleNameById(int roleId) => _userData.GetRoleNameById(roleId);
+
+    public Task<string?> GetUserRoleName(int userId) => _userData.GetUserRoleName(userId);
+
+    public Task<bool> CenterIsActive(int centerId) => _userData.CenterIsActive(centerId);
+
+    public Task<bool> SetActiveAsync(int userId, bool isActive) => _userData.SetActiveAsync(userId, isActive);
 
     public Task<bool> EmailExists(string email)
     {

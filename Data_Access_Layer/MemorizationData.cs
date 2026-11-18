@@ -1,4 +1,4 @@
-using Data_Access_Layer.Data;
+﻿using Data_Access_Layer.Data;
 using Data_Access_Layer.DTOs;
 using Data_Access_Layer.Models;
 using Microsoft.EntityFrameworkCore;
@@ -58,7 +58,12 @@ namespace Data_Access_Layer
             return await _context.MemorizationRecords
                 .AsNoTracking()
                 .Where(record => (!centerId.HasValue || record.CenterId == centerId.Value)
-                    && (!teacherId.HasValue || record.TeacherId == teacherId.Value)
+                    && (!teacherId.HasValue || _context.HalaqaStudents.Any(membership =>
+                        membership.StudentId == record.StudentId
+                        && membership.EndDate == null
+                        && membership.CenterId == record.CenterId
+                        && membership.Halaqa.IsActive
+                        && membership.Halaqa.TeacherId == teacherId.Value))
                     && (!studentId.HasValue || record.StudentId == studentId.Value)
                     && (!fromDate.HasValue || record.RecordDate >= fromDate.Value)
                     && (!toDate.HasValue || record.RecordDate <= toDate.Value))

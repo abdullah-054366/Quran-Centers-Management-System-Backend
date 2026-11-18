@@ -1,4 +1,4 @@
-using Data_Access_Layer.Data;
+﻿using Data_Access_Layer.Data;
 using Data_Access_Layer.DTOs;
 using Data_Access_Layer.Models;
 using Microsoft.EntityFrameworkCore;
@@ -42,18 +42,73 @@ namespace Data_Access_Layer
                 from user in _context.Users.AsNoTracking()
                 join role in _context.Roles.AsNoTracking()
                     on user.RoleId equals role.RoleId
-                orderby user.FirstName
+                join center in _context.Centers.AsNoTracking()
+                    on user.CenterId equals center.CenterId into centers
+                from center in centers.DefaultIfEmpty()
+                orderby user.FirstName, user.LastName
                 select new UserDTO
                 {
                     UserId = user.UserId,
                     RoleId = user.RoleId,
+                    CenterId = user.CenterId,
                     FirstName = user.FirstName,
                     LastName = user.LastName,
                     Email = user.Email,
                     PhoneNumber = user.PhoneNumber ?? string.Empty,
-                    IsActive = user.IsActive
+                    IsActive = user.IsActive,
+                    RoleName = role.RoleName,
+                    CenterName = center != null ? center.CenterName : null,
+                    CreatedAt = user.CreatedAt
                 }
             ).ToListAsync();
+        }
+
+        public async Task<List<RoleDTO>> GetRoles()
+        {
+            return await _context.Roles.AsNoTracking()
+                .OrderBy(role => role.RoleId)
+                .Select(role => new RoleDTO { RoleId = role.RoleId, RoleName = role.RoleName })
+                .ToListAsync();
+        }
+
+        public Task<string?> GetRoleNameById(int roleId)
+        {
+            return _context.Roles.AsNoTracking()
+                .Where(role => role.RoleId == roleId)
+                .Select(role => (string?)role.RoleName)
+                .FirstOrDefaultAsync();
+        }
+
+        public Task<string?> GetUserRoleName(int userId)
+        {
+            return _context.Users.AsNoTracking()
+                .Where(user => user.UserId == userId)
+                .Select(user => (string?)user.Role.RoleName)
+                .FirstOrDefaultAsync();
+        }
+
+        public Task<bool> CenterIsActive(int centerId)
+        {
+            return _context.Centers.AsNoTracking()
+                .AnyAsync(center => center.CenterId == centerId && center.IsActive);
+        }
+
+        public async Task<bool> SetActiveAsync(int userId, bool isActive)
+        {
+            var user = await _context.Users.FindAsync(userId);
+            if (user == null)
+                return false;
+
+            user.IsActive = isActive;
+            if (!isActive)
+            {
+                user.RefreshTokenHash = null;
+                user.RefreshTokenExpiresAt = null;
+                user.RefreshTokenRevokedAt = DateTime.UtcNow;
+            }
+
+            await _context.SaveChangesAsync();
+            return true;
         }
 
         public async Task<UserDTO?> GetUserById(int userId)
@@ -120,6 +175,53 @@ namespace Data_Access_Layer
             _context.Users.Add(user);
             await _context.SaveChangesAsync();
             input.UserId = user.UserId;
+            return true;
+        }
+
+        // مركز يقبل التسجيل برمزه: نشط والكود مفعّل.
+        public async Task<int?> FindCenterIdForRegistration(string centerCode)
+        {
+            var code = centerCode.Trim().ToUpperInvariant();
+            return await _context.Centers.AsNoTracking()
+                .Where(center => center.CenterCode.ToUpper() == code
+                    && center.IsActive
+                    && center.CodeEnabled)
+                .Select(center => (int?)center.CenterId)
+                .FirstOrDefaultAsync();
+        }
+
+        // ينشئ حساب طالب وسجل الطالب معاً في عملية حفظ واحدة.
+        public async Task<bool> RegisterStudentAsync(UserDTO input, int centerId)
+        {
+            var roleId = await _context.Roles.AsNoTracking()
+                .Where(role => role.RoleName == "Student")
+                .Select(role => (int?)role.RoleId)
+                .FirstOrDefaultAsync();
+
+            if (!roleId.HasValue)
+                return false;
+
+            var user = new User
+            {
+                RoleId = roleId.Value,
+                CenterId = centerId,
+                FirstName = input.FirstName.Trim(),
+                LastName = input.LastName.Trim(),
+                Email = input.Email.Trim().ToLowerInvariant(),
+                PasswordHash = BCrypt.Net.BCrypt.HashPassword(input.Password
+                    ?? throw new ArgumentException("A password is required.", nameof(input))),
+                PhoneNumber = input.PhoneNumber,
+                IsActive = true,
+                Student = new Student
+                {
+                    CenterId = centerId,
+                    IsActive = true,
+                    JoinedAt = DateOnly.FromDateTime(DateTime.UtcNow.AddHours(3))
+                }
+            };
+
+            _context.Users.Add(user);
+            await _context.SaveChangesAsync();
             return true;
         }
 

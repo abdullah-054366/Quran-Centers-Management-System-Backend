@@ -1,4 +1,4 @@
-using Data_Access_Layer;
+﻿using Data_Access_Layer;
 using Data_Access_Layer.DTOs;
 
 namespace Business_Layer
@@ -47,9 +47,10 @@ namespace Business_Layer
             int planId,
             bool isActive,
             int? centerId,
-            int? teacherId)
+            int? teacherId,
+            int? studentId = null)
         {
-            return await _memorizationPlanData.UpdateStatusAsync(planId, isActive, centerId, teacherId);
+            return await _memorizationPlanData.UpdateStatusAsync(planId, isActive, centerId, teacherId, studentId);
         }
     }
 }

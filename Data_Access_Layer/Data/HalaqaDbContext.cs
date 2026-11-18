@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using Data_Access_Layer.Models;
 using Microsoft.EntityFrameworkCore;
@@ -14,7 +14,11 @@ public partial class HalaqaDbContext : DbContext
 
     public virtual DbSet<Attendance> Attendances { get; set; }
 
+    public virtual DbSet<AuditLog> AuditLogs { get; set; }
+
     public virtual DbSet<Center> Centers { get; set; }
+
+    public virtual DbSet<CenterSetting> CenterSettings { get; set; }
 
     public virtual DbSet<HalaqaStudent> HalaqaStudents { get; set; }
 
@@ -66,6 +70,36 @@ public partial class HalaqaDbContext : DbContext
                 .HasForeignKey(d => d.StudentId)
                 .OnDelete(DeleteBehavior.Restrict)
                 .HasConstraintName("Attendances_StudentId_fkey");
+        });
+
+        modelBuilder.Entity<AuditLog>(entity =>
+        {
+            entity.HasKey(e => e.AuditLogId).HasName("AuditLogs_pkey");
+
+            entity.Property(e => e.AuditLogId).UseIdentityAlwaysColumn();
+            entity.Property(e => e.ActorName).HasMaxLength(200);
+            entity.Property(e => e.ActorRole).HasMaxLength(50);
+            entity.Property(e => e.Action).HasMaxLength(60);
+            entity.Property(e => e.EntityType).HasMaxLength(40);
+            entity.Property(e => e.EntityId).HasMaxLength(40);
+            entity.Property(e => e.EntityName).HasMaxLength(200);
+            entity.Property(e => e.Details).HasMaxLength(1000);
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("now()")
+                .HasColumnType("timestamp without time zone");
+        });
+
+        modelBuilder.Entity<CenterSetting>(entity =>
+        {
+            entity.HasKey(e => e.CenterId).HasName("CenterSettings_pkey");
+            entity.Property(e => e.CenterId).ValueGeneratedNever();
+            entity.Property(e => e.Phone).HasMaxLength(30);
+            entity.Property(e => e.Address).HasMaxLength(250);
+            entity.Property(e => e.DefaultDays).HasMaxLength(20);
+            entity.Property(e => e.DefaultStartTime).HasMaxLength(5);
+            entity.Property(e => e.DefaultEndTime).HasMaxLength(5);
+            entity.Property(e => e.UpdatedAt).HasColumnType("timestamp without time zone");
+            entity.HasOne<Center>().WithOne().HasForeignKey<CenterSetting>(e => e.CenterId).OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<Center>(entity =>

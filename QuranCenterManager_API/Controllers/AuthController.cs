@@ -1,4 +1,4 @@
-using Data_Access_Layer;
+﻿using Data_Access_Layer;
 using Data_Access_Layer.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -24,15 +24,18 @@ namespace StudentApi.Controllers
         private readonly string _jwtSecret;
         private readonly ILogger<AuthController> _logger;
         private readonly UserData _userData;
+        private readonly Business_Layer.AuditBusinessLayer _audit;
 
         public AuthController(
             ILogger<AuthController> logger,
             UserData userData,
+            Business_Layer.AuditBusinessLayer audit,
             IConfiguration configuration,
             IWebHostEnvironment environment)
         {
             _logger = logger;
             _userData = userData;
+            _audit = audit;
             _jwtSecret = JwtConfiguration.GetSecret(configuration, environment);
         }
 
@@ -72,6 +75,83 @@ namespace StudentApi.Controllers
             {
                 AccessToken = CreateAccessToken(user),
                 RefreshToken = refreshToken
+            });
+        }
+
+        // التسجيل الذاتي للطلاب فقط. الدور والمركز يحددهما الخادم، لا المستخدم.
+        [HttpPost("register")]
+        [AllowAnonymous]
+        [EnableRateLimiting("AuthLimiter")]
+        public async Task<IActionResult> Register([FromBody] RegisterStudentRequest? request)
+        {
+            if (request is null
+                || string.IsNullOrWhiteSpace(request.FirstName)
+                || string.IsNullOrWhiteSpace(request.LastName)
+                || string.IsNullOrWhiteSpace(request.Email)
+                || string.IsNullOrWhiteSpace(request.CenterCode)
+                || string.IsNullOrEmpty(request.Password))
+            {
+                return BadRequest("أكمل كل الحقول المطلوبة.");
+            }
+
+            var email = request.Email.Trim().ToLowerInvariant();
+            if (email.Length > 255
+                || !new System.ComponentModel.DataAnnotations.EmailAddressAttribute().IsValid(email))
+            {
+                return BadRequest("أدخل بريداً إلكترونياً صحيحاً.");
+            }
+
+            if (request.Password.Length < 8 || request.Password.Length > 100)
+                return BadRequest("كلمة المرور يجب أن تكون من 8 إلى 100 حرف.");
+
+            if (request.FirstName.Trim().Length > 100 || request.LastName.Trim().Length > 100
+                || (request.PhoneNumber?.Trim().Length ?? 0) > 20
+                || request.CenterCode.Trim().Length > 10)
+            {
+                return BadRequest("إحدى القيم تتجاوز الطول المسموح.");
+            }
+
+            var centerId = await _userData.FindCenterIdForRegistration(request.CenterCode);
+            if (!centerId.HasValue)
+                return BadRequest("رمز المركز غير صحيح أو أن التسجيل مغلق لهذا المركز.");
+
+            if (await _userData.EmailExists(email))
+                return Conflict("البريد الإلكتروني مستخدم مسبقاً.");
+
+            try
+            {
+                var created = await _userData.RegisterStudentAsync(
+                    new Data_Access_Layer.DTOs.UserDTO
+                    {
+                        FirstName = request.FirstName,
+                        LastName = request.LastName,
+                        Email = email,
+                        PhoneNumber = string.IsNullOrWhiteSpace(request.PhoneNumber) ? null : request.PhoneNumber.Trim(),
+                        Password = request.Password
+                    },
+                    centerId.Value);
+
+                if (!created)
+                    return StatusCode(StatusCodes.Status500InternalServerError, "تعذّر إنشاء الحساب.");
+            }
+            catch (Microsoft.EntityFrameworkCore.DbUpdateException)
+            {
+                return Conflict("تعذّر إنشاء الحساب. قد يكون البريد مستخدماً.");
+            }
+
+            await _audit.LogAsync(new Data_Access_Layer.DTOs.AuditEntryDTO
+            {
+                ActorName = $"{request.FirstName.Trim()} {request.LastName.Trim()}",
+                ActorRole = "Student",
+                Action = "student.register",
+                EntityType = "Center",
+                EntityId = centerId.Value.ToString(),
+                Details = "تسجيل ذاتي برمز المركز"
+            });
+
+            return StatusCode(StatusCodes.Status201Created, new
+            {
+                message = "تم إنشاء حسابك. سيضيفك مدير المركز إلى حلقة، ويمكنك تسجيل الدخول الآن."
             });
         }
 

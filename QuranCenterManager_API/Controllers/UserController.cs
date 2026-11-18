@@ -5,53 +5,65 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
 namespace QuranCenterManager_API.Controllers;
+
 [Authorize]
 [ApiController]
 [Route("api/Users")]
 public class UserController : ControllerBase
 {
+    private const string AdminRoles = "PlatformAdmin,Admin";
+
     private readonly UserBusinessLayer _business;
-    public UserController(UserBusinessLayer business)
+    private readonly AuditBusinessLayer _audit;
+
+    public UserController(UserBusinessLayer business, AuditBusinessLayer audit)
     {
         _business = business;
+        _audit = audit;
     }
 
+    private bool IsPlatformAdmin => User.IsInRole("PlatformAdmin");
+
+    // حسابات PlatformAdmin لا يغيّرها إلا PlatformAdmin، منعاً لتصعيد الصلاحيات.
+    private bool CanTouchRole(string? roleName)
+        => !string.Equals(roleName, "PlatformAdmin", StringComparison.Ordinal) || IsPlatformAdmin;
+
+    private static string FullName(string first, string last) => $"{first} {last}".Trim();
+
     [HttpGet]
-    [Authorize(Roles = "PlatformAdmin,Admin")]
+    [Authorize(Roles = AdminRoles)]
     public async Task<IActionResult> GetAllUsers()
     {
-
         var users = await _business.GetAllUsers();
-
         return Ok(users ?? new List<UserDTO>());
     }
 
-
+    [HttpGet("Roles")]
+    [Authorize(Roles = AdminRoles)]
+    public async Task<IActionResult> GetRoles()
+    {
+        return Ok(await _business.GetRoles());
+    }
 
     [HttpGet("{userId:int}")]
     public async Task<IActionResult> GetUserById(int userId)
     {
-        if (userId < 1) 
+        if (userId < 1)
             return BadRequest("Invalid user ID.");
 
-
         var callerId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-
 
         if (!User.IsInRole("Admin") && !User.IsInRole("PlatformAdmin")
             && callerId != userId.ToString())
             return Forbid();
-
 
         var user = await _business.GetUserById(userId);
 
         return user is null ? NotFound() : Ok(user);
     }
 
-
-
     [HttpPost]
-    [Authorize(Roles = "PlatformAdmin,Admin")]
+    [Authorize(Roles = AdminRoles)]
     public async Task<IActionResult> CreateUser([FromBody] UserDTO input)
     {
         if (input is null
@@ -62,17 +74,38 @@ public class UserController : ControllerBase
             || input.Password.Length < 8
             || input.RoleId < 1)
         {
-            return BadRequest("First name, last name, email, a valid role, and a password of at least 8 characters are required.");
+            return BadRequest("الاسم الأول والأخير والبريد والدور وكلمة مرور من 8 أحرف على الأقل مطلوبة.");
         }
 
         var email = input.Email.Trim().ToLowerInvariant();
         if (email.Length > 255 || !new System.ComponentModel.DataAnnotations.EmailAddressAttribute().IsValid(email))
-            return BadRequest("A valid email address is required.");
+            return BadRequest("أدخل بريداً إلكترونياً صحيحاً.");
 
         if (input.FirstName.Trim().Length > 100 || input.LastName.Trim().Length > 100
             || (input.PhoneNumber?.Length ?? 0) > 20)
         {
-            return BadRequest("Name or phone number exceeds the allowed length.");
+            return BadRequest("الاسم أو رقم الهاتف يتجاوز الطول المسموح.");
+        }
+
+        var roleName = await _business.GetRoleNameById(input.RoleId);
+        if (roleName is null)
+            return BadRequest("الدور غير صالح.");
+
+        // المدرس والطالب يُنشآن من صفحتيهما لأن لهما سجلاً إضافياً مرتبطاً بالحساب.
+        if (roleName is "Teacher" or "Student")
+            return BadRequest("أنشئ المدرسين من صفحة المدرسين، والطلاب من التسجيل.");
+
+        if (!CanTouchRole(roleName))
+            return Forbid();
+
+        if (roleName == "CenterAdmin")
+        {
+            if (!input.CenterId.HasValue || !await _business.CenterIsActive(input.CenterId.Value))
+                return BadRequest("اختر مركزاً نشطاً لمدير المركز.");
+        }
+        else
+        {
+            input.CenterId = null;
         }
 
         try
@@ -92,9 +125,13 @@ public class UserController : ControllerBase
                 IsActive = input.IsActive
             });
 
-            return created
-                ? StatusCode(StatusCodes.Status201Created, new { message = "تم إنشاء الحساب بنجاح." })
-                : StatusCode(StatusCodes.Status500InternalServerError, "تعذر إنشاء الحساب.");
+            if (!created)
+                return StatusCode(StatusCodes.Status500InternalServerError, "تعذر إنشاء الحساب.");
+
+            await this.LogAuditAsync(_audit, "user.create", "User", null,
+                FullName(input.FirstName, input.LastName), $"الدور: {roleName}، البريد: {email}");
+
+            return StatusCode(StatusCodes.Status201Created, new { message = "تم إنشاء الحساب بنجاح." });
         }
         catch (DbUpdateException)
         {
@@ -103,28 +140,66 @@ public class UserController : ControllerBase
     }
 
     [HttpPut("{userId:int}/password")]
-    [Authorize(Roles = "PlatformAdmin,Admin")]
+    [Authorize(Roles = AdminRoles)]
     public async Task<IActionResult> ResetPassword(int userId, [FromBody] ResetPasswordRequest request)
     {
         if (userId < 1)
             return BadRequest("Invalid user ID.");
 
         if (request is null || string.IsNullOrWhiteSpace(request.NewPassword) || request.NewPassword.Length < 8)
-            return BadRequest("A new password of at least 8 characters is required.");
+            return BadRequest("كلمة المرور الجديدة يجب ألا تقل عن 8 أحرف.");
+
+        var target = await _business.Find(userId);
+        if (target is null)
+            return NotFound("المستخدم غير موجود.");
+
+        var targetRole = await _business.GetUserRoleName(userId);
+        if (!CanTouchRole(targetRole))
+            return Forbid();
 
         var updated = await _business.UpdatePassword(userId, request.NewPassword);
-        return updated
-            ? Ok(new { message = "تمت إعادة تعيين كلمة المرور. سجّل الدخول مجددًا على الأجهزة الأخرى." })
-            : NotFound("User not found.");
+        if (!updated)
+            return NotFound("المستخدم غير موجود.");
+
+        await this.LogAuditAsync(_audit, "user.password_reset", "User", userId,
+            FullName(target.FirstName, target.LastName), $"الدور: {targetRole}");
+
+        return Ok(new { message = "تمت إعادة تعيين كلمة المرور. سجّل الدخول مجددًا على الأجهزة الأخرى." });
+    }
+
+    [HttpPut("{userId:int}/status")]
+    [Authorize(Roles = AdminRoles)]
+    public async Task<IActionResult> UpdateStatus(int userId, [FromBody] UserStatusDTO input)
+    {
+        if (userId < 1 || input is null)
+            return BadRequest("Invalid user ID.");
+
+        if (this.GetUserId() == userId)
+            return BadRequest("لا يمكنك تعطيل حسابك بنفسك.");
+
+        var target = await _business.Find(userId);
+        if (target is null)
+            return NotFound("المستخدم غير موجود.");
+
+        var targetRole = await _business.GetUserRoleName(userId);
+        if (!CanTouchRole(targetRole))
+            return Forbid();
+
+        if (!await _business.SetActiveAsync(userId, input.IsActive))
+            return NotFound("المستخدم غير موجود.");
+
+        await this.LogAuditAsync(_audit, input.IsActive ? "user.enable" : "user.disable", "User", userId,
+            FullName(target.FirstName, target.LastName), $"الدور: {targetRole}");
+
+        return Ok(new { userId, isActive = input.IsActive });
     }
 
     [HttpPut("{userId:int}")]
-    [Authorize(Roles = "PlatformAdmin,Admin")]
-    public async Task<IActionResult> UpdateUser(
-    int userId,
-    [FromBody] UserDTO input)
+    [Authorize(Roles = AdminRoles)]
+    public async Task<IActionResult> UpdateUser(int userId, [FromBody] UserDTO input)
     {
         if (userId < 1
+            || input is null
             || string.IsNullOrWhiteSpace(input.FirstName)
             || string.IsNullOrWhiteSpace(input.LastName)
             || string.IsNullOrWhiteSpace(input.Email)
@@ -145,55 +220,96 @@ public class UserController : ControllerBase
 
         try
         {
-            var userUpdate = await _business.Find(userId);
+            var existing = await _business.Find(userId);
+            if (existing is null)
+                return NotFound("المستخدم غير موجود.");
 
-            if (userUpdate is null)
-                return NotFound("User not found.");
+            var currentRole = await _business.GetUserRoleName(userId);
+            var newRole = await _business.GetRoleNameById(input.RoleId);
+            if (newRole is null)
+                return BadRequest("الدور غير صالح.");
 
-            userUpdate.RoleId = input.RoleId;
-            userUpdate.CenterId = input.CenterId;
-            userUpdate.FirstName = input.FirstName;
-            userUpdate.LastName = input.LastName;
-            userUpdate.Email = normalizedEmail;
-            userUpdate.PhoneNumber = input.PhoneNumber;
-            userUpdate.IsActive = input.IsActive;
-            userUpdate.Password = input.Password;
-        
+            if (!CanTouchRole(currentRole) || !CanTouchRole(newRole))
+                return Forbid();
 
-            var saved = await userUpdate.Save();
+            if (this.GetUserId() == userId && (input.RoleId != existing.RoleId || !input.IsActive))
+                return BadRequest("لا يمكنك تغيير دورك أو تعطيل حسابك بنفسك.");
 
-            if (!saved)
-                return StatusCode(StatusCodes.Status500InternalServerError,
-                    "Could not update user.");
+            if (newRole == "CenterAdmin")
+            {
+                if (!input.CenterId.HasValue)
+                    return BadRequest("اختر مركزاً لمدير المركز.");
+            }
+
+            var dto = new UserDTO
+            {
+                UserId = userId,
+                RoleId = input.RoleId,
+                CenterId = input.CenterId,
+                FirstName = input.FirstName,
+                LastName = input.LastName,
+                Email = normalizedEmail,
+                PhoneNumber = input.PhoneNumber,
+                IsActive = input.IsActive
+            };
+
+            if (!await _business.UpdateUserAsync(dto))
+                return StatusCode(StatusCodes.Status500InternalServerError, "تعذر تحديث المستخدم.");
+
+            var changes = new List<string>();
+            if (currentRole != newRole) changes.Add($"الدور: {currentRole} ← {newRole}");
+            if (existing.IsActive != input.IsActive) changes.Add(input.IsActive ? "تفعيل" : "تعطيل");
+            if (existing.CenterId != input.CenterId) changes.Add("تغيير المركز");
+            if (!string.Equals(existing.Email, normalizedEmail, StringComparison.OrdinalIgnoreCase)) changes.Add("تغيير البريد");
+
+            await this.LogAuditAsync(_audit, "user.update", "User", userId,
+                FullName(input.FirstName, input.LastName),
+                changes.Count > 0 ? string.Join("، ", changes) : "تعديل بيانات");
 
             return Ok();
         }
         catch (DbUpdateException)
         {
-            return Conflict(
-                "Could not update user. Email may already exist or a related ID is invalid.");
+            return Conflict("تعذر تحديث المستخدم. قد يكون البريد مستخدمًا أو توجد قيمة مرتبطة غير صحيحة.");
         }
     }
+
     [HttpDelete("{userId:int}")]
-    [Authorize(Roles = "PlatformAdmin,Admin")]
+    [Authorize(Roles = AdminRoles)]
     public async Task<IActionResult> DeleteUser(int userId)
     {
-        if (userId < 1) 
+        if (userId < 1)
             return BadRequest("Invalid user ID.");
-        try 
+
+        if (this.GetUserId() == userId)
+            return BadRequest("لا يمكنك حذف حسابك بنفسك.");
+
+        var target = await _business.Find(userId);
+        if (target is null)
+            return NotFound();
+
+        var targetRole = await _business.GetUserRoleName(userId);
+        if (!CanTouchRole(targetRole))
+            return Forbid();
+
+        try
         {
-            return await _business.DeleteUser(userId) ? NoContent() : NotFound(); 
+            if (!await _business.DeleteUser(userId))
+                return NotFound();
+
+            await this.LogAuditAsync(_audit, "user.delete", "User", userId,
+                FullName(target.FirstName, target.LastName), $"الدور: {targetRole}، البريد: {target.Email}");
+
+            return NoContent();
         }
-        catch (DbUpdateException) 
+        catch (DbUpdateException)
         {
-            return Conflict("لا يمكن حذف هذا المستخدم لأنه مرتبط بسجلات أخرى."); 
+            return Conflict("لا يمكن حذف هذا المستخدم لأنه مرتبط بسجلات أخرى. عطّل حسابه بدلاً من حذفه.");
         }
     }
 
-
-
     [HttpGet("Count", Name = "GetUserCount")]
-    [Authorize(Roles = "PlatformAdmin,Admin")]
+    [Authorize(Roles = AdminRoles)]
     public async Task<IActionResult> GetUserCount()
     {
         var count = await _business.getCountUsers();
@@ -205,4 +321,3 @@ public sealed class ResetPasswordRequest
 {
     public string? NewPassword { get; set; }
 }
-

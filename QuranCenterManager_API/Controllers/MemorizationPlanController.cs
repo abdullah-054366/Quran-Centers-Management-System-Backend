@@ -1,4 +1,4 @@
-using Business_Layer;
+﻿using Business_Layer;
 using Data_Access_Layer.DTOs;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -21,7 +21,7 @@ namespace QuranCenterManager_API.Controllers
             _logger = logger;
         }
 
-        // القراءة: الإدارة والمعلم، والطالب لخططه فقط. الإنشاء والإيقاف للإدارة والمعلم.
+        // الإدارة والمعلم ضمن نطاقهم، والطالب لخططه هو فقط (قراءة وإنشاء وإيقاف).
         private const string StaffRoles = "PlatformAdmin,Admin,CenterAdmin,Teacher";
         private const string ReaderRoles = StaffRoles + ",Student";
 
@@ -58,11 +58,15 @@ namespace QuranCenterManager_API.Controllers
         }
 
         [HttpPost]
-        [Authorize(Roles = StaffRoles)]
+        [Authorize(Roles = ReaderRoles)]
         public async Task<IActionResult> Create([FromBody] MemorizationPlanWriteDTO? input)
         {
-            if (!TryGetPlanScope(out var centerId, out var teacherId, out var userId, out _))
+            if (!TryGetPlanScope(out var centerId, out var teacherId, out var userId, out var ownStudentId))
                 return Forbid();
+
+            // الطالب ينشئ لنفسه فقط، مهما أُرسل في الطلب.
+            if (ownStudentId.HasValue && input != null)
+                input.StudentId = ownStudentId.Value;
 
             if (!IsValidInput(input))
                 return BadRequest("تحقق من الطالب ونطاق السور والهدف (صفحات الجلسة من 1 إلى 604) وأيام الخطة.");
@@ -91,7 +95,7 @@ namespace QuranCenterManager_API.Controllers
         }
 
         [HttpPut("{id:int}/status", Name = "UpdateMemorizationPlanStatus")]
-        [Authorize(Roles = StaffRoles)]
+        [Authorize(Roles = ReaderRoles)]
         public async Task<IActionResult> UpdateStatus(
             int id,
             [FromBody] MemorizationPlanStatusDTO? input)
@@ -99,7 +103,7 @@ namespace QuranCenterManager_API.Controllers
             if (id < 1 || input == null)
                 return BadRequest("بيانات حالة الخطة غير صالحة.");
 
-            if (!TryGetPlanScope(out var centerId, out var teacherId, out _, out _))
+            if (!TryGetPlanScope(out var centerId, out var teacherId, out _, out var studentId))
                 return Forbid();
 
             try
@@ -108,7 +112,8 @@ namespace QuranCenterManager_API.Controllers
                     id,
                     input.IsActive,
                     centerId,
-                    teacherId);
+                    teacherId,
+                    studentId);
 
                 return plan == null ? NotFound() : Ok(plan);
             }

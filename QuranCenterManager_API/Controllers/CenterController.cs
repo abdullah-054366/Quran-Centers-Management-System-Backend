@@ -17,10 +17,12 @@ namespace QuranCenterManager_API.Controllers
 
        
         private readonly CenterBusinessLayer _business;
+        private readonly AuditBusinessLayer _audit;
 
-        public CenterController(CenterBusinessLayer business)
+        public CenterController(CenterBusinessLayer business, AuditBusinessLayer audit)
         {
             _business = business;
+            _audit = audit;
         }
 
         [HttpGet("All", Name = "GetAllCenters")]
@@ -88,6 +90,8 @@ namespace QuranCenterManager_API.Controllers
             try
             {
                 var center = await _business.AddCenter(input);
+                await this.LogAuditAsync(_audit, "center.create", "Center", center.CenterId, center.CenterName,
+                    $"الكود: {center.CenterCode}");
                 return CreatedAtAction(nameof(GetCenterById), new { id = center.CenterId }, center);
             }
             catch (DbUpdateException)
@@ -106,7 +110,12 @@ namespace QuranCenterManager_API.Controllers
                 return BadRequest("Invalid center ID.");
 
             var center = await _business.UpdateCenterStatus(id, input.IsActive);
-            return center is null ? NotFound() : Ok(center);
+            if (center is null)
+                return NotFound();
+
+            await this.LogAuditAsync(_audit, input.IsActive ? "center.activate" : "center.suspend",
+                "Center", center.CenterId, center.CenterName);
+            return Ok(center);
         }
 
         [HttpPut("{id:int}/code")]
@@ -119,25 +128,131 @@ namespace QuranCenterManager_API.Controllers
                 return BadRequest("Invalid center ID.");
 
             var center = await _business.UpdateCenterCodeEnabled(id, input.CodeEnabled);
-            return center is null ? NotFound() : Ok(center);
+            if (center is null)
+                return NotFound();
+
+            await this.LogAuditAsync(_audit, input.CodeEnabled ? "center.code_enable" : "center.code_disable",
+                "Center", center.CenterId, center.CenterName);
+            return Ok(center);
         }
 
-        [HttpDelete("{id}", Name = "DeleteCenter")]
+        [HttpPut("{id:int}")]
         [Authorize(Roles = "PlatformAdmin,Admin")]
+        public async Task<ActionResult<CenterDTO>> UpdateCenter(int id, [FromBody] CenterNameDTO input)
+        {
+            if (id < 1)
+                return BadRequest("Invalid center ID.");
 
+            if (input is null
+                || string.IsNullOrWhiteSpace(input.CenterName)
+                || input.CenterName.Trim().Length > 150)
+            {
+                return BadRequest("اسم المركز مطلوب ولا يتجاوز 150 حرفاً.");
+            }
+
+            var before = await _business.GetCenterById(id);
+            if (before is null)
+                return NotFound();
+
+            var center = await _business.UpdateCenterName(id, input.CenterName);
+            if (center is null)
+                return NotFound();
+
+            await this.LogAuditAsync(_audit, "center.rename", "Center", center.CenterId, center.CenterName,
+                $"الاسم السابق: {before.CenterName}");
+            return Ok(center);
+        }
+
+        [HttpPost("{id:int}/regenerate-code")]
+        [Authorize(Roles = "PlatformAdmin,Admin")]
+        public async Task<ActionResult<CenterDTO>> RegenerateCode(int id)
+        {
+            if (id < 1)
+                return BadRequest("Invalid center ID.");
+
+            try
+            {
+                var before = await _business.GetCenterById(id);
+                if (before is null)
+                    return NotFound();
+
+                var center = await _business.RegenerateCenterCode(id);
+                if (center is null)
+                    return NotFound();
+
+                await this.LogAuditAsync(_audit, "center.code_regenerate", "Center", center.CenterId,
+                    center.CenterName, $"الكود السابق: {before.CenterCode}");
+                return Ok(center);
+            }
+            catch (DbUpdateException)
+            {
+                return Conflict("تعذّر توليد كود جديد. حاول مرة أخرى.");
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Conflict(ex.Message);
+            }
+        }
+
+        [HttpGet("{id:int}/deletion-summary")]
+        [Authorize(Roles = "PlatformAdmin,Admin")]
+        public async Task<ActionResult<CenterDeletionSummaryDTO>> GetDeletionSummary(int id)
+        {
+            if (id < 1)
+                return BadRequest("Invalid center ID.");
+
+            var summary = await _business.GetDeletionSummary(id);
+            return summary is null ? NotFound() : Ok(summary);
+        }
+
+        [HttpGet("{id:int}/overview")]
+        [Authorize(Roles = "PlatformAdmin,Admin")]
+        public async Task<ActionResult<CenterOverviewDTO>> GetCenterOverview(int id)
+        {
+            if (id < 1)
+                return BadRequest("Invalid center ID.");
+
+            var overview = await _business.GetCenterOverview(id);
+            return overview is null ? NotFound() : Ok(overview);
+        }
+
+        [HttpGet("Overview")]
+        [Authorize(Roles = "PlatformAdmin,Admin")]
+        public async Task<ActionResult<PlatformOverviewDTO>> GetPlatformOverview()
+        {
+            return Ok(await _business.GetPlatformOverview());
+        }
+
+        // الحذف النهائي لا يسمح به إلا لمركز فارغ تماماً؛ غير ذلك يُوقَف المركز (أرشفة).
+        [HttpDelete("{id:int}", Name = "DeleteCenter")]
+        [Authorize(Roles = "PlatformAdmin,Admin")]
         public async Task<ActionResult> DeleteCenter(int id)
         {
             if (id < 1)
                 return BadRequest("Invalid center ID.");
 
-            var result = await _business.DeleteCenter(id);
-            if (!result)
-            {
+            var summary = await _business.GetDeletionSummary(id);
+            if (summary is null)
                 return NotFound();
+
+            if (!summary.CanDelete)
+            {
+                return Conflict("لا يمكن حذف مركز يحتوي بيانات (طلاب أو مدرسين أو حلقات أو سجلات). أوقف المركز بدلاً من حذفه.");
             }
+
+            try
+            {
+                if (!await _business.DeleteCenter(id))
+                    return NotFound();
+            }
+            catch (DbUpdateException)
+            {
+                return Conflict("لا يمكن حذف المركز لارتباطه ببيانات أخرى. أوقفه بدلاً من حذفه.");
+            }
+
+            await this.LogAuditAsync(_audit, "center.delete", "Center", id, summary.CenterName);
             return Ok();
         }
-
 
         [HttpGet("Count", Name = "GetCenterCount")]
         [Authorize(Roles = "PlatformAdmin,Admin")]

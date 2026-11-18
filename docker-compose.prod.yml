@@ -1,17 +1,20 @@
 # نشر الإنتاج على السيرفر خلف Caddy (شبكة proxy الخارجية).
-# التشغيل: docker compose -f docker-compose.prod.yml --env-file .env up -d --build
+# النشر يتم تلقائياً من GitHub Actions (يسحب الصورة من GHCR).
+# تشغيل يدوي: docker compose -f docker-compose.prod.yml --env-file .env up -d
+# بناء يدوي على السيرفر (بدون GHCR): docker compose -f docker-compose.prod.yml --env-file .env up -d --build
 services:
   api:
     build:
       context: .
       dockerfile: Dockerfile
-    image: quran-center-api:prod
+    image: ${API_IMAGE:-ghcr.io/abdullah-054366/mushka-api:latest}
     container_name: mushka-api
     restart: unless-stopped
     init: true
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       ASPNETCORE_URLS: http://+:8080
+      TZ: Asia/Riyadh
       HttpsRedirection__Enabled: "false"
       ForwardedHeaders__Enabled: "true"
       ConnectionStrings__DefaultConnection: Host=db;Port=5432;Database=halaqa_db;Username=halaqa_admin;Password=${DB_PASSWORD:?Set DB_PASSWORD in .env}
@@ -34,6 +37,7 @@ services:
       POSTGRES_DB: halaqa_db
       POSTGRES_USER: halaqa_admin
       POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
+      TZ: Asia/Riyadh
     volumes:
       - pgdata:/var/lib/postgresql
     healthcheck:
