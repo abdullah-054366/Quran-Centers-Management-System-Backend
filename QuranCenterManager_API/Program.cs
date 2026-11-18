@@ -189,12 +189,6 @@ var app = builder.Build();
 // ===============================
 // 4) Middleware Pipeline
 // ===============================
-if (app.Environment.IsDevelopment())
-{
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
-
 // خلف Caddy فقط (ForwardedHeaders__Enabled=true في docker-compose.prod.yml).
 // يجب أن يسبق Rate Limiting حتى يُحسب الحد لكل عميل وليس لعنوان Caddy.
 // آمن لأن حاوية الـ API لا تنشر أي منفذ للخارج؛ الوصول إليها عبر Caddy فقط.
@@ -207,6 +201,17 @@ if (app.Configuration.GetValue("ForwardedHeaders:Enabled", false))
     forwardedOptions.KnownNetworks.Clear();
     forwardedOptions.KnownProxies.Clear();
     app.UseForwardedHeaders(forwardedOptions);
+}
+
+// Swagger: مفعّل دائماً في التطوير، وفي الإنتاج فقط إذا كان Swagger__Enabled=true
+// (في docker-compose.prod.yml). محمي في الإنتاج بكلمة مرور عبر Caddy.
+var swaggerEnabled = app.Environment.IsDevelopment()
+                     || app.Configuration.GetValue("Swagger:Enabled", false);
+
+if (swaggerEnabled)
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
 }
 
 if (app.Configuration.GetValue("HttpsRedirection:Enabled", app.Environment.IsDevelopment()))
