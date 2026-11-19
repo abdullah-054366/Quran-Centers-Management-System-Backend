@@ -1,4 +1,4 @@
-using Data_Access_Layer.Data;
+﻿using Data_Access_Layer.Data;
 using Data_Access_Layer.DTOs;
 using Data_Access_Layer.Models;
 using Microsoft.EntityFrameworkCore;
@@ -51,6 +51,39 @@ public sealed class HalaqaData
                     PhoneNumber = user.PhoneNumber,
                     StartDate = membership.StartDate
                 }).ToListAsync();
+    }
+
+    /// <summary>
+    /// الحلقات النشطة في مركز، كما تُعرض للطالب أثناء التسجيل الذاتي.
+    /// </summary>
+    public async Task<List<PublicHalaqaDTO>> GetForRegistrationAsync(int centerId)
+    {
+        return await (from halaqa in _context.Halaqats.AsNoTracking()
+                      where halaqa.CenterId == centerId && halaqa.IsActive
+                      orderby halaqa.HalaqaName
+                      select new PublicHalaqaDTO
+                      {
+                          HalaqaId = halaqa.HalaqaId,
+                          HalaqaName = halaqa.HalaqaName,
+                          Description = halaqa.Description,
+                          TeacherName = (
+                              from teacher in _context.Teachers.AsNoTracking()
+                              join user in _context.Users.AsNoTracking() on teacher.UserId equals user.UserId
+                              where teacher.TeacherId == halaqa.TeacherId
+                              select user.FirstName + " " + user.LastName
+                          ).FirstOrDefault(),
+                          StudentCount = _context.HalaqaStudents.Count(membership =>
+                              membership.HalaqaId == halaqa.HalaqaId && membership.EndDate == null)
+                      }).ToListAsync();
+    }
+
+    /// <summary>يتحقق أن الحلقة نشطة وتتبع هذا المركز (يُستخدم في التسجيل الذاتي).</summary>
+    public Task<bool> IsOpenForRegistrationAsync(int halaqaId, int centerId)
+    {
+        return _context.Halaqats.AsNoTracking()
+            .AnyAsync(halaqa => halaqa.HalaqaId == halaqaId
+                && halaqa.CenterId == centerId
+                && halaqa.IsActive);
     }
 
     public async Task<List<StudentDTO>> GetAvailableStudentsAsync(int halaqaId, int? centerId = null)

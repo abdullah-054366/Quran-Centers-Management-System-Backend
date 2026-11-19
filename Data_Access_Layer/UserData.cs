@@ -190,8 +190,9 @@ namespace Data_Access_Layer
                 .FirstOrDefaultAsync();
         }
 
-        // ينشئ حساب طالب وسجل الطالب معاً في عملية حفظ واحدة.
-        public async Task<bool> RegisterStudentAsync(UserDTO input, int centerId)
+        // ينشئ حساب طالب وسجل الطالب معاً في عملية حفظ واحدة،
+        // ويُسنده إلى الحلقة التي اختارها عند التسجيل إن وُجدت.
+        public async Task<bool> RegisterStudentAsync(UserDTO input, int centerId, int? halaqaId = null)
         {
             var roleId = await _context.Roles.AsNoTracking()
                 .Where(role => role.RoleName == "Student")
@@ -222,6 +223,19 @@ namespace Data_Access_Layer
 
             _context.Users.Add(user);
             await _context.SaveChangesAsync();
+
+            if (halaqaId.HasValue)
+            {
+                _context.HalaqaStudents.Add(new HalaqaStudent
+                {
+                    CenterId = centerId,
+                    HalaqaId = halaqaId.Value,
+                    StudentId = user.Student!.StudentId,
+                    StartDate = DateOnly.FromDateTime(DateTime.UtcNow.AddHours(3))
+                });
+                await _context.SaveChangesAsync();
+            }
+
             return true;
         }
 

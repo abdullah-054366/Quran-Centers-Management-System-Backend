@@ -1,4 +1,4 @@
-namespace StudentApi.DTOs.Auth
+﻿namespace StudentApi.DTOs.Auth
 {
     public class RegisterStudentRequest
     {
@@ -8,5 +8,8 @@ namespace StudentApi.DTOs.Auth
         public string? PhoneNumber { get; set; }
         public string? Password { get; set; }
         public string? CenterCode { get; set; }
+
+        /// <summary>الحلقة التي اختارها الطالب من حلقات المركز.</summary>
+        public int? HalaqaId { get; set; }
     }
 }

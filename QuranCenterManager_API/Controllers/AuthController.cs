@@ -25,17 +25,20 @@ namespace StudentApi.Controllers
         private readonly ILogger<AuthController> _logger;
         private readonly UserData _userData;
         private readonly Business_Layer.AuditBusinessLayer _audit;
+        private readonly Business_Layer.HalaqaBusinessLayer _halaqat;
 
         public AuthController(
             ILogger<AuthController> logger,
             UserData userData,
             Business_Layer.AuditBusinessLayer audit,
+            Business_Layer.HalaqaBusinessLayer halaqat,
             IConfiguration configuration,
             IWebHostEnvironment environment)
         {
             _logger = logger;
             _userData = userData;
             _audit = audit;
+            _halaqat = halaqat;
             _jwtSecret = JwtConfiguration.GetSecret(configuration, environment);
         }
 
@@ -79,6 +82,25 @@ namespace StudentApi.Controllers
         }
 
         // التسجيل الذاتي للطلاب فقط. الدور والمركز يحددهما الخادم، لا المستخدم.
+        /// <summary>
+        /// حلقات المركز المفتوحة للتسجيل، يختار منها الطالب حلقته قبل إنشاء حسابه.
+        /// لا تُرجع شيئاً إلا إذا كان رمز المركز صحيحاً والتسجيل الذاتي مفعّلاً.
+        /// </summary>
+        [HttpGet("center-halaqat")]
+        [AllowAnonymous]
+        [EnableRateLimiting("AuthLimiter")]
+        public async Task<IActionResult> GetCenterHalaqat([FromQuery] string? code)
+        {
+            if (string.IsNullOrWhiteSpace(code) || code.Trim().Length > 10)
+                return BadRequest("رمز المركز غير صحيح.");
+
+            var centerId = await _userData.FindCenterIdForRegistration(code);
+            if (!centerId.HasValue)
+                return BadRequest("رمز المركز غير صحيح أو أن التسجيل مغلق لهذا المركز.");
+
+            return Ok(await _halaqat.GetForRegistrationAsync(centerId.Value));
+        }
+
         [HttpPost("register")]
         [AllowAnonymous]
         [EnableRateLimiting("AuthLimiter")]
@@ -118,6 +140,22 @@ namespace StudentApi.Controllers
             if (await _userData.EmailExists(email))
                 return Conflict("البريد الإلكتروني مستخدم مسبقاً.");
 
+            // الحلقة اختيار الطالب: يجب أن تكون نشطة وتتبع نفس المركز.
+            // إن لم يكن في المركز حلقات بعد، يُسمح بالتسجيل بلا حلقة ويُسندها مدير المركز لاحقاً.
+            int? halaqaId = null;
+
+            if (request.HalaqaId.HasValue)
+            {
+                if (!await _halaqat.IsOpenForRegistrationAsync(request.HalaqaId.Value, centerId.Value))
+                    return BadRequest("الحلقة المختارة غير موجودة في هذا المركز أو غير نشطة.");
+
+                halaqaId = request.HalaqaId.Value;
+            }
+            else if ((await _halaqat.GetForRegistrationAsync(centerId.Value)).Count > 0)
+            {
+                return BadRequest("اختر الحلقة التي تريد الانضمام إليها.");
+            }
+
             try
             {
                 var created = await _userData.RegisterStudentAsync(
@@ -129,7 +167,8 @@ namespace StudentApi.Controllers
                         PhoneNumber = string.IsNullOrWhiteSpace(request.PhoneNumber) ? null : request.PhoneNumber.Trim(),
                         Password = request.Password
                     },
-                    centerId.Value);
+                    centerId.Value,
+                    halaqaId);
 
                 if (!created)
                     return StatusCode(StatusCodes.Status500InternalServerError, "تعذّر إنشاء الحساب.");
@@ -146,12 +185,16 @@ namespace StudentApi.Controllers
                 Action = "student.register",
                 EntityType = "Center",
                 EntityId = centerId.Value.ToString(),
-                Details = "تسجيل ذاتي برمز المركز"
+                Details = halaqaId.HasValue
+                    ? $"تسجيل ذاتي برمز المركز، واختار الحلقة رقم {halaqaId.Value}"
+                    : "تسجيل ذاتي برمز المركز بلا حلقة"
             });
 
             return StatusCode(StatusCodes.Status201Created, new
             {
-                message = "تم إنشاء حسابك. سيضيفك مدير المركز إلى حلقة، ويمكنك تسجيل الدخول الآن."
+                message = halaqaId.HasValue
+                    ? "تم إنشاء حسابك وانضمامك إلى الحلقة. يمكنك تسجيل الدخول الآن."
+                    : "تم إنشاء حسابك. سيضيفك مدير المركز إلى حلقة، ويمكنك تسجيل الدخول الآن."
             });
         }
 

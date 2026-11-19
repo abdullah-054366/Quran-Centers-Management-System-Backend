@@ -72,7 +72,7 @@ var allowedOrigins = builder.Configuration
     .ToArray();
 
 if (allowedOrigins.Length == 0)
-    allowedOrigins = new[] { "http://localhost:5173" };
+     allowedOrigins = new[] { "http://localhost:5173" };
 
 builder.Services.AddCors(options =>
 {
@@ -205,9 +205,7 @@ if (app.Configuration.GetValue("ForwardedHeaders:Enabled", false))
 
 // Swagger: مفعّل دائماً في التطوير، وفي الإنتاج فقط إذا كان Swagger__Enabled=true
 // (في docker-compose.prod.yml). محمي في الإنتاج بكلمة مرور عبر Caddy.
-var swaggerEnabled = app.Environment.IsDevelopment()
-                     || app.Configuration.GetValue("Swagger:Enabled", false);
-
+var swaggerEnabled = app.Environment.IsDevelopment() || app.Configuration.GetValue("Swagger:Enabled", false);
 if (swaggerEnabled)
 {
     app.UseSwagger();

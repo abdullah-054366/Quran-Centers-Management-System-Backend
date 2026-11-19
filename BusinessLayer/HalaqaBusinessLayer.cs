@@ -1,4 +1,4 @@
-using Data_Access_Layer;
+﻿using Data_Access_Layer;
 using Data_Access_Layer.DTOs;
 
 namespace Business_Layer;
@@ -25,6 +25,16 @@ public sealed class HalaqaBusinessLayer
     public Task<List<HalaqaStudentDTO>> GetStudentsAsync(int halaqaId, int? centerId = null)
     {
         return _halaqaData.GetStudentsAsync(halaqaId, centerId);
+    }
+
+    public Task<List<PublicHalaqaDTO>> GetForRegistrationAsync(int centerId)
+    {
+        return _halaqaData.GetForRegistrationAsync(centerId);
+    }
+
+    public Task<bool> IsOpenForRegistrationAsync(int halaqaId, int centerId)
+    {
+        return _halaqaData.IsOpenForRegistrationAsync(halaqaId, centerId);
     }
 
     public Task<List<StudentDTO>> GetAvailableStudentsAsync(int halaqaId, int? centerId = null)
