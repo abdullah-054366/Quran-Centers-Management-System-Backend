@@ -38,9 +38,19 @@ namespace Business_Layer
             return await _memorizationPlanData.CreateAsync(input, centerId, teacherId, userId);
         }
 
-        public async Task<bool> HasOverlappingActivePlanAsync(MemorizationPlanWriteDTO input)
+        public async Task<bool> HasOverlappingActivePlanAsync(MemorizationPlanWriteDTO input, int? excludePlanId = null)
         {
-            return await _memorizationPlanData.HasOverlappingActivePlanAsync(input);
+            return await _memorizationPlanData.HasOverlappingActivePlanAsync(input, excludePlanId);
+        }
+
+        public async Task<MemorizationPlanDTO?> UpdateAsync(
+            int planId,
+            MemorizationPlanWriteDTO input,
+            int? centerId,
+            int? teacherId,
+            int? studentId = null)
+        {
+            return await _memorizationPlanData.UpdateAsync(planId, input, centerId, teacherId, studentId);
         }
 
         public async Task<MemorizationPlanDTO?> UpdateStatusAsync(

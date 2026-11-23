@@ -1,4 +1,4 @@
-namespace Data_Access_Layer.DTOs
+﻿namespace Data_Access_Layer.DTOs
 {
     public class MemorizationPlanDTO
     {
@@ -12,6 +12,8 @@ namespace Data_Access_Layer.DTOs
         public short PagesPerSession { get; set; }
         public short TargetRounds { get; set; }
         public DateOnly StartDate { get; set; }
+        public DateOnly? EndDate { get; set; }
+        public bool DeriveAmount { get; set; }
         public int[] DaysOfWeek { get; set; } = Array.Empty<int>();
         public bool IsActive { get; set; }
         public int CompletedSessions { get; set; }
@@ -27,6 +29,8 @@ namespace Data_Access_Layer.DTOs
         public short PagesPerSession { get; set; }
         public short TargetRounds { get; set; }
         public DateOnly StartDate { get; set; }
+        public DateOnly? EndDate { get; set; }
+        public bool DeriveAmount { get; set; }
         public int[] DaysOfWeek { get; set; } = Array.Empty<int>();
     }
 

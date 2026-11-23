@@ -124,6 +124,52 @@ namespace QuranCenterManager_API.Controllers
             }
         }
 
+        [HttpPut("{id:int}", Name = "UpdateMemorizationPlan")]
+        [Authorize(Roles = ReaderRoles)]
+        public async Task<IActionResult> Update(int id, [FromBody] MemorizationPlanWriteDTO? input)
+        {
+            if (id < 1)
+                return BadRequest("رقم الخطة غير صالح.");
+
+            if (!TryGetPlanScope(out var centerId, out var teacherId, out _, out var ownStudentId))
+                return Forbid();
+
+            var current = await _memorizationPlanBusinessLayer.GetByIdAsync(id, centerId, teacherId, ownStudentId);
+
+            if (current == null)
+                return NotFound();
+
+            // الطالب والنوع يُؤخذان من الخطة نفسها لا من الطلب: تغييرهما يجعلها خطة أخرى.
+            if (input != null)
+            {
+                input.StudentId = current.StudentId;
+                input.Type = current.Type;
+            }
+
+            if (!IsValidInput(input))
+                return BadRequest("تحقق من نطاق السور والهدف (صفحات الجلسة من 1 إلى 604) وأيام الخطة ومدّتها.");
+
+            try
+            {
+                if (await _memorizationPlanBusinessLayer.HasOverlappingActivePlanAsync(input!, id))
+                    return Conflict("لدى الطالب خطة نشطة أخرى من نفس النوع يتقاطع نطاقها مع هذا النطاق.");
+
+                var plan = await _memorizationPlanBusinessLayer.UpdateAsync(
+                    id,
+                    input!,
+                    centerId,
+                    teacherId,
+                    ownStudentId);
+
+                return plan == null ? NotFound() : Ok(plan);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to update memorization plan");
+                return StatusCode(500, "تعذر تعديل الخطة بسبب خطأ في الخادم.");
+            }
+        }
+
         private static bool IsValidInput(MemorizationPlanWriteDTO? input)
         {
             return input != null
@@ -136,10 +182,32 @@ namespace QuranCenterManager_API.Controllers
                 && input.PagesPerSession is >= 1 and <= 604
                 && input.TargetRounds is >= 1 and <= 1000
                 && input.StartDate != default
+                && (input.EndDate is null || input.EndDate >= input.StartDate)
                 && input.DaysOfWeek != null
                 && input.DaysOfWeek.Length is >= 1 and <= 7
                 && input.DaysOfWeek.All(day => day >= 0 && day <= 6)
-                && input.DaysOfWeek.Distinct().Count() == input.DaysOfWeek.Length;
+                && input.DaysOfWeek.Distinct().Count() == input.DaysOfWeek.Length
+                && HasPlanDayInSpan(input);
+        }
+
+        // خطة محدّدة المدّة بلا يوم واحد من أيامها داخل المدّة = خطة بلا جلسات.
+        // أيام الأسبوع تتكرر كل سبعة أيام، ففحص أول سبعة أيام من المدّة يكفي ويمنع
+        // حلقة طويلة لو جاء تاريخ نهاية بعيد.
+        private static bool HasPlanDayInSpan(MemorizationPlanWriteDTO input)
+        {
+            if (input.EndDate is null)
+                return true;
+
+            var days = input.DaysOfWeek.ToHashSet();
+            var limit = input.StartDate.AddDays(6);
+
+            for (var day = input.StartDate; day <= input.EndDate.Value && day <= limit; day = day.AddDays(1))
+            {
+                if (days.Contains((int)day.DayOfWeek))
+                    return true;
+            }
+
+            return false;
         }
 
         private bool TryGetPlanScope(

@@ -71,6 +71,8 @@ namespace Data_Access_Layer
                 PagesPerSession = input.PagesPerSession,
                 TargetRounds = input.TargetRounds,
                 StartDate = input.StartDate,
+                EndDate = input.EndDate,
+                DeriveAmount = input.DeriveAmount,
                 DaysOfWeek = input.DaysOfWeek.Distinct().OrderBy(day => day).ToArray(),
                 IsActive = true,
                 CreatedByUserId = userId
@@ -98,6 +100,36 @@ namespace Data_Access_Layer
             plan.IsActive = isActive;
             // Npgsql 8 يرفض DateTime بـ Kind=Utc في عمود timestamp without time zone.
             plan.UpdatedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
+            await _context.SaveChangesAsync();
+
+            return await GetByIdAsync(planId, centerId, teacherId, studentId);
+        }
+
+        // تعديل خطة قائمة. الطالب والنوع لا يُعدَّلان: تغييرهما يجعلها خطة أخرى
+        // وينقطع حسابها عن سجلات الطالب المحسوبة على النطاق القديم.
+        public async Task<MemorizationPlanDTO?> UpdateAsync(
+            int planId,
+            MemorizationPlanWriteDTO input,
+            int? centerId,
+            int? teacherId,
+            int? studentId = null)
+        {
+            var plan = await GetScopedPlans(centerId, teacherId, asNoTracking: false, studentId: studentId)
+                .FirstOrDefaultAsync(item => item.MemorizationPlanId == planId);
+
+            if (plan == null)
+                return null;
+
+            plan.FromSurah = input.FromSurah;
+            plan.ToSurah = input.ToSurah;
+            plan.PagesPerSession = input.PagesPerSession;
+            plan.TargetRounds = input.TargetRounds;
+            plan.StartDate = input.StartDate;
+            plan.EndDate = input.EndDate;
+            plan.DeriveAmount = input.DeriveAmount;
+            plan.DaysOfWeek = input.DaysOfWeek.Distinct().OrderBy(day => day).ToArray();
+            plan.UpdatedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
+
             await _context.SaveChangesAsync();
 
             return await GetByIdAsync(planId, centerId, teacherId, studentId);
@@ -149,6 +181,8 @@ namespace Data_Access_Layer
                 PagesPerSession = plan.PagesPerSession,
                 TargetRounds = plan.TargetRounds,
                 StartDate = plan.StartDate,
+                EndDate = plan.EndDate,
+                DeriveAmount = plan.DeriveAmount,
                 DaysOfWeek = plan.DaysOfWeek,
                 IsActive = plan.IsActive,
                 // نوع الخطة 0 = حفظ، 1 = مراجعة؛ ونوع السجل 1 = حفظ، 2 = مراجعة.
@@ -169,12 +203,14 @@ namespace Data_Access_Layer
         }
 
         // خطة نشطة لنفس الطالب والنوع يتقاطع نطاق سورها مع الخطة الجديدة.
-        public async Task<bool> HasOverlappingActivePlanAsync(MemorizationPlanWriteDTO input)
+        // excludePlanId: الخطة التي تُعدَّل لا تتقاطع مع نفسها.
+        public async Task<bool> HasOverlappingActivePlanAsync(MemorizationPlanWriteDTO input, int? excludePlanId = null)
         {
             return await _context.MemorizationPlans.AsNoTracking().AnyAsync(plan =>
                 plan.StudentId == input.StudentId
                 && plan.Type == input.Type
                 && plan.IsActive
+                && (!excludePlanId.HasValue || plan.MemorizationPlanId != excludePlanId.Value)
                 && plan.FromSurah <= input.ToSurah
                 && plan.ToSurah >= input.FromSurah);
         }

@@ -6,6 +6,11 @@ BEGIN;
 ALTER TABLE "MemorizationPlans"
     ADD COLUMN IF NOT EXISTS "EndDate" date NULL;
 
+-- true = مقدار الجلسة مشتقّ من النطاق والمدّة، وPagesPerSession تقريب للعرض فقط.
+-- false (الافتراضي) = المقدار مثبّت كما كان، فخطط اليوم تبقى على سلوكها.
+ALTER TABLE "MemorizationPlans"
+    ADD COLUMN IF NOT EXISTS "DeriveAmount" boolean NOT NULL DEFAULT false;
+
 -- النهاية لا تسبق البداية. التحقّق في الـ API يُنسى عند إضافة نقطة وصول أخرى؛ القيد لا يُنسى.
 DO $$
 BEGIN
