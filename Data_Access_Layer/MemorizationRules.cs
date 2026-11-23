@@ -1,4 +1,4 @@
-namespace Data_Access_Layer
+﻿namespace Data_Access_Layer
 {
     /// <summary>قواعد سجلات الحفظ والمراجعة (الحدود اليومية والتاريخ وعدد آيات السور).</summary>
     public static class MemorizationRules
@@ -39,7 +39,7 @@ namespace Data_Access_Layer
             surahNumber >= 1 && surahNumber <= AyahCounts.Length ? AyahCounts[surahNumber - 1] : 0;
 
         public static string LimitMessage(short type) => type == TypeMemorization
-            ? "تم تسجيل حفظ جديد لهذا الطالب اليوم، ولا يُسمح بأكثر من سجل حفظ واحد في اليوم."
-            : "بلغ هذا الطالب الحد الأقصى لسجلات المراجعة اليوم (سجلان)، ولا يمكن إضافة المزيد.";
+            ? "تم تسجيل حفظ جديد لهذا الطالب اليوم. لتصحيحه عدّل التسجيل الموجود بدل إضافة سجل جديد."
+            : "بلغ هذا الطالب الحد الأقصى لسجلات المراجعة اليوم (سجلان). لتصحيح أحدها عدّله بدل إضافة سجل جديد.";
     }
 }

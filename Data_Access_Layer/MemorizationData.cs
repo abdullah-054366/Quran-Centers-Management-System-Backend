@@ -184,28 +184,55 @@ namespace Data_Access_Layer
                     "SELECT pg_advisory_xact_lock({0}, {1})", StudentLockNamespace, studentId);
             }
 
-            // منع إعادة إرسال جلسة محفوظة (نقر مزدوج أو تكرار الطلب).
+            // جلسة واردة بمعرّف محفوظ = تعديل لا تكرار: المعلّم يصحّح ما سجّله فتُستبدل
+            // صفوفها. والشرط أن تكون صفوفها القديمة لنفس (الطالب، التاريخ، النوع) الوارد
+            // وداخل مركز المعلّم؛ وإلا فالمعرّف يخصّ تسجيلاً آخر فنرفض.
+            // وإعادة إرسال الجلسة نفسها بلا تغيير (نقر مزدوج) تصير بلا أثر لا خطأً.
             var incomingSessionIds = records
                 .Where(record => record.SessionId.HasValue)
                 .Select(record => record.SessionId!.Value)
                 .Distinct()
                 .ToList();
 
+            var replacedRows = new List<MemorizationRecord>();
+
             if (incomingSessionIds.Count > 0)
             {
-                var alreadySaved = await _context.MemorizationRecords
-                    .AsNoTracking()
-                    .AnyAsync(record => record.SessionId != null && incomingSessionIds.Contains(record.SessionId.Value));
+                replacedRows = await _context.MemorizationRecords
+                    .Where(record => record.SessionId != null && incomingSessionIds.Contains(record.SessionId.Value))
+                    .ToListAsync();
 
-                if (alreadySaved)
+                var incomingKeys = records
+                    .Where(record => record.SessionId.HasValue)
+                    .GroupBy(record => record.SessionId!.Value)
+                    .ToDictionary(
+                        group => group.Key,
+                        group => (
+                            StudentId: group.First().StudentId,
+                            RecordDate: group.First().RecordDate,
+                            Type: group.First().Type));
+
+                foreach (var row in replacedRows)
                 {
-                    return new MemorizationSaveResult
+                    if (row.CenterId != teacher.CenterId
+                        || !incomingKeys.TryGetValue(row.SessionId!.Value, out var owner)
+                        || row.StudentId != owner.StudentId
+                        || row.RecordDate != owner.RecordDate
+                        || row.Type != owner.Type)
                     {
-                        Status = MemorizationSaveStatus.DuplicateSession,
-                        Message = "تم تسجيل هذه الجلسة مسبقاً."
-                    };
+                        return new MemorizationSaveResult
+                        {
+                            Status = MemorizationSaveStatus.DuplicateSession,
+                            Message = "معرّف الجلسة مستخدم لتسجيل آخر."
+                        };
+                    }
                 }
             }
+
+            var replacedSessionIds = replacedRows
+                .Where(row => row.SessionId.HasValue)
+                .Select(row => row.SessionId!.Value)
+                .ToHashSet();
 
             // فحص الحد اليومي لكل (طالب، تاريخ، نوع) مقابل ما هو محفوظ فعلاً في قاعدة البيانات.
             var groups = records
@@ -223,9 +250,14 @@ namespace Data_Access_Layer
                     .Select(record => record.SessionId)
                     .ToListAsync();
 
+                // الجلسة المستبدلة لا تُحتسب مرّتين: ستُحذف قبل الإدخال في المعاملة نفسها.
+                var remaining = existing
+                    .Where(id => !(id.HasValue && replacedSessionIds.Contains(id.Value)))
+                    .ToList();
+
                 var incomingSessions = CountSessions(group.Select(record => record.SessionId));
 
-                if (CountSessions(existing) + incomingSessions > MemorizationRules.MaxPerDay(key.Type))
+                if (CountSessions(remaining) + incomingSessions > MemorizationRules.MaxPerDay(key.Type))
                 {
                     return new MemorizationSaveResult
                     {
@@ -250,6 +282,13 @@ namespace Data_Access_Layer
                 Source = MemorizationRules.SourceManual,
                 SessionId = record.SessionId
             }).ToList();
+
+            // الحذف قبل الإدخال صريحاً وفي المعاملة نفسها: استبدال ذرّي لا يترك فراغاً.
+            if (replacedRows.Count > 0)
+            {
+                _context.MemorizationRecords.RemoveRange(replacedRows);
+                await _context.SaveChangesAsync();
+            }
 
             await _context.MemorizationRecords.AddRangeAsync(entities);
             await _context.SaveChangesAsync();
