@@ -1,4 +1,4 @@
-using Business_Layer;
+﻿using Business_Layer;
 using Data_Access_Layer.DTOs;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -8,7 +8,7 @@ namespace QuranCenterManager_API.Controllers;
 
 [ApiController]
 [Route("api/Halaqat")]
-[Authorize(Roles = "PlatformAdmin,Admin,CenterAdmin")]
+[Authorize(Roles = "PlatformAdmin,Admin,CenterAdmin,Teacher")]
 public class HalaqaController : ControllerBase
 {
     private readonly HalaqaBusinessLayer _business;
@@ -21,10 +21,10 @@ public class HalaqaController : ControllerBase
     [HttpGet("All", Name = "GetAllHalaqat")]
     public async Task<ActionResult<List<HalaqaDTO>>> GetAll()
     {
-        if (!TryGetCenterScope(out var centerId))
+        if (!TryGetScope(out var centerId, out var teacherId))
             return Forbid();
 
-        return Ok(await _business.GetAllAsync(centerId));
+        return Ok(await _business.GetAllAsync(centerId, teacherId));
     }
 
     [HttpGet("{id:int}", Name = "GetHalaqaById")]
@@ -33,10 +33,10 @@ public class HalaqaController : ControllerBase
         if (id < 1)
             return BadRequest("Invalid halaqa ID.");
 
-        if (!TryGetCenterScope(out var centerId))
+        if (!TryGetScope(out var centerId, out var teacherId))
             return Forbid();
 
-        var halaqa = await _business.GetByIdAsync(id, centerId);
+        var halaqa = await _business.GetByIdAsync(id, centerId, teacherId);
         if (halaqa is null)
             return NotFound();
 
@@ -49,10 +49,10 @@ public class HalaqaController : ControllerBase
         if (id < 1)
             return BadRequest("Invalid halaqa ID.");
 
-        if (!TryGetCenterScope(out var centerScope))
+        if (!TryGetScope(out var centerScope, out var teacherScope))
             return Forbid();
 
-        if (await _business.GetByIdAsync(id, centerScope) is null)
+        if (await _business.GetByIdAsync(id, centerScope, teacherScope) is null)
             return NotFound();
 
         return Ok(await _business.GetStudentsAsync(id, centerScope));
@@ -64,10 +64,10 @@ public class HalaqaController : ControllerBase
         if (id < 1)
             return BadRequest("Invalid halaqa ID.");
 
-        if (!TryGetCenterScope(out var centerScope))
+        if (!TryGetScope(out var centerScope, out var teacherScope))
             return Forbid();
 
-        if (await _business.GetByIdAsync(id, centerScope) is null)
+        if (await _business.GetByIdAsync(id, centerScope, teacherScope) is null)
             return NotFound();
 
         return Ok(await _business.GetAvailableStudentsAsync(id, centerScope));
@@ -87,10 +87,10 @@ public class HalaqaController : ControllerBase
             return BadRequest("اختر طالباً واحداً على الأقل.");
         }
 
-        if (!TryGetCenterScope(out var centerScope))
+        if (!TryGetScope(out var centerScope, out var teacherScope))
             return Forbid();
 
-        var halaqa = await _business.GetByIdAsync(id, centerScope);
+        var halaqa = await _business.GetByIdAsync(id, centerScope, teacherScope);
         if (halaqa is null)
             return NotFound();
         if (!halaqa.IsActive)
@@ -116,10 +116,10 @@ public class HalaqaController : ControllerBase
         if (id < 1 || studentId < 1)
             return BadRequest("Invalid halaqa or student ID.");
 
-        if (!TryGetCenterScope(out var centerScope))
+        if (!TryGetScope(out var centerScope, out var teacherScope))
             return Forbid();
 
-        if (await _business.GetByIdAsync(id, centerScope) is null)
+        if (await _business.GetByIdAsync(id, centerScope, teacherScope) is null)
             return NotFound();
 
         var removed = await _business.RemoveStudentAsync(id, studentId, centerScope);
@@ -127,6 +127,7 @@ public class HalaqaController : ControllerBase
     }
 
     [HttpPost]
+    [Authorize(Roles = "PlatformAdmin,Admin,CenterAdmin")]
     public async Task<ActionResult<HalaqaDTO>> Create([FromBody] HalaqaWriteDTO input)
     {
         if (!TryGetCenterScope(out var centerScope))
@@ -154,6 +155,7 @@ public class HalaqaController : ControllerBase
     }
 
     [HttpPut("{id:int}")]
+    [Authorize(Roles = "PlatformAdmin,Admin,CenterAdmin")]
     public async Task<ActionResult<HalaqaDTO>> Update(int id, [FromBody] HalaqaWriteDTO input)
     {
         if (id < 1)
@@ -202,6 +204,7 @@ public class HalaqaController : ControllerBase
     }
 
     [HttpDelete("{id:int}")]
+    [Authorize(Roles = "PlatformAdmin,Admin,CenterAdmin")]
     public async Task<IActionResult> Delete(int id)
     {
         if (id < 1)
@@ -233,6 +236,37 @@ public class HalaqaController : ControllerBase
             && (!input.TeacherId.HasValue || input.TeacherId.Value > 0)
             && (!input.CenterId.HasValue || input.CenterId.Value > 0)
             && (!requireCenter || input.CenterId.HasValue);
+    }
+
+    /// <summary>
+    /// نطاق القارئ: مسؤول المنصة يرى الكل، ومدير المركز مركزه،
+    /// والمعلم حلقاته هو فقط (teacherId من التوكن).
+    /// </summary>
+    private bool TryGetScope(out int? centerId, out int? teacherId)
+    {
+        centerId = null;
+        teacherId = null;
+
+        if (User.IsInRole("PlatformAdmin") || User.IsInRole("Admin"))
+            return true;
+
+        if (!int.TryParse(User.FindFirst("centerId")?.Value, out var parsedCenterId) || parsedCenterId < 1)
+            return false;
+
+        centerId = parsedCenterId;
+
+        if (User.IsInRole("CenterAdmin"))
+            return true;
+
+        if (User.IsInRole("Teacher")
+            && int.TryParse(User.FindFirst("teacherId")?.Value, out var parsedTeacherId)
+            && parsedTeacherId > 0)
+        {
+            teacherId = parsedTeacherId;
+            return true;
+        }
+
+        return false;
     }
 
     private bool TryGetCenterScope(out int? centerId)

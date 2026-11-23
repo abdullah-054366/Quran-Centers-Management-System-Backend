@@ -12,14 +12,14 @@ public sealed class HalaqaBusinessLayer
         _halaqaData = halaqaData;
     }
 
-    public Task<List<HalaqaDTO>> GetAllAsync(int? centerId = null)
+    public Task<List<HalaqaDTO>> GetAllAsync(int? centerId = null, int? teacherId = null)
     {
-        return _halaqaData.GetAllAsync(centerId);
+        return _halaqaData.GetAllAsync(centerId, teacherId);
     }
 
-    public Task<HalaqaDTO?> GetByIdAsync(int halaqaId, int? centerId = null)
+    public Task<HalaqaDTO?> GetByIdAsync(int halaqaId, int? centerId = null, int? teacherId = null)
     {
-        return _halaqaData.GetByIdAsync(halaqaId, centerId);
+        return _halaqaData.GetByIdAsync(halaqaId, centerId, teacherId);
     }
 
     public Task<List<HalaqaStudentDTO>> GetStudentsAsync(int halaqaId, int? centerId = null)

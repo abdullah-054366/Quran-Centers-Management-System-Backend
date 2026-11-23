@@ -14,20 +14,22 @@ public sealed class HalaqaData
         _context = context;
     }
 
-    public Task<List<HalaqaDTO>> GetAllAsync(int? centerId = null)
+    public Task<List<HalaqaDTO>> GetAllAsync(int? centerId = null, int? teacherId = null)
     {
         return GetHalaqaQuery()
-            .Where(halaqa => !centerId.HasValue || halaqa.CenterId == centerId.Value)
+            .Where(halaqa => (!centerId.HasValue || halaqa.CenterId == centerId.Value)
+                && (!teacherId.HasValue || halaqa.TeacherId == teacherId.Value))
             .OrderBy(halaqa => halaqa.CenterName)
             .ThenBy(halaqa => halaqa.HalaqaName)
             .ToListAsync();
     }
 
-    public Task<HalaqaDTO?> GetByIdAsync(int halaqaId, int? centerId = null)
+    public Task<HalaqaDTO?> GetByIdAsync(int halaqaId, int? centerId = null, int? teacherId = null)
     {
         return GetHalaqaQuery()
             .Where(halaqa => halaqa.HalaqaId == halaqaId
-                && (!centerId.HasValue || halaqa.CenterId == centerId.Value))
+                && (!centerId.HasValue || halaqa.CenterId == centerId.Value)
+                && (!teacherId.HasValue || halaqa.TeacherId == teacherId.Value))
             .FirstOrDefaultAsync();
     }
 
