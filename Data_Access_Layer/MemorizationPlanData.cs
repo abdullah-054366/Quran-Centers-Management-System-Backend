@@ -96,7 +96,8 @@ namespace Data_Access_Layer
                 return null;
 
             plan.IsActive = isActive;
-            plan.UpdatedAt = DateTime.UtcNow;
+            // Npgsql 8 يرفض DateTime بـ Kind=Utc في عمود timestamp without time zone.
+            plan.UpdatedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
             await _context.SaveChangesAsync();
 
             return await GetByIdAsync(planId, centerId, teacherId, studentId);
