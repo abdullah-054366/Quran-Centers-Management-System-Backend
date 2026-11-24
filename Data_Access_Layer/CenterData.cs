@@ -126,6 +126,98 @@ namespace Data_Access_Layer
             return true; // Center deleted successfully
         }
 
+        /// <summary>
+        /// يمحو المركز وكل ما يتبعه في معاملة واحدة: لا رجعة فيه.
+        /// الترتيب يتبع المفاتيح الأجنبية — الأبناء قبل الآباء — وقيود RESTRICT
+        /// تبقى كما هي، فأي ترتيب خاطئ يُفشل المعاملة كلها ولا يترك نصف حذف.
+        /// </summary>
+        public async Task<CenterPurgeResultDTO?> PurgeCenterAsync(int centerId)
+        {
+            var center = await _context.Centers.AsNoTracking()
+                .FirstOrDefaultAsync(item => item.CenterId == centerId);
+
+            if (center is null)
+                return null;
+
+            await using var transaction = await _context.Database.BeginTransactionAsync();
+
+            var result = new CenterPurgeResultDTO
+            {
+                CenterId = centerId,
+                CenterName = center.CenterName
+            };
+
+            result.AttendanceRecords = await _context.Attendances
+                .Where(item => item.CenterId == centerId).ExecuteDeleteAsync();
+
+            result.MemorizationRecords = await _context.MemorizationRecords
+                .Where(item => item.CenterId == centerId).ExecuteDeleteAsync();
+
+            result.Plans = await _context.MemorizationPlans
+                .Where(item => item.CenterId == centerId).ExecuteDeleteAsync();
+
+            result.HalaqaStudents = await _context.HalaqaStudents
+                .Where(item => item.CenterId == centerId).ExecuteDeleteAsync();
+
+            result.Halaqat = await _context.Halaqats
+                .Where(item => item.CenterId == centerId).ExecuteDeleteAsync();
+
+            result.Students = await _context.Students
+                .Where(item => item.CenterId == centerId).ExecuteDeleteAsync();
+
+            result.Teachers = await _context.Teachers
+                .Where(item => item.CenterId == centerId).ExecuteDeleteAsync();
+
+            // حسابات المركز: بعضها قد يكون أنشأ سجلاً في مركز آخر (مدير نُقل، أو
+            // معلم سجّل في مركزين). حذفه يرفضه المفتاح الأجنبي من السجل الباقي
+            // فتفشل العملية كلها، فنفصله عن المركز ونعطّله بدل حذفه.
+            var centerUserIds = await _context.Users.AsNoTracking()
+                .Where(item => item.CenterId == centerId)
+                .Select(item => item.UserId)
+                .ToListAsync();
+
+            var referenced = new List<int>();
+
+            if (centerUserIds.Count > 0)
+            {
+                referenced.AddRange(await _context.Attendances.AsNoTracking()
+                    .Where(item => centerUserIds.Contains(item.RecordedByUserId))
+                    .Select(item => item.RecordedByUserId).Distinct().ToListAsync());
+
+                referenced.AddRange(await _context.MemorizationRecords.AsNoTracking()
+                    .Where(item => centerUserIds.Contains(item.CreatedByUserId))
+                    .Select(item => item.CreatedByUserId).Distinct().ToListAsync());
+
+                referenced.AddRange(await _context.MemorizationPlans.AsNoTracking()
+                    .Where(item => centerUserIds.Contains(item.CreatedByUserId))
+                    .Select(item => item.CreatedByUserId).Distinct().ToListAsync());
+            }
+
+            referenced = referenced.Distinct().ToList();
+
+            result.UsersDetached = await _context.Users
+                .Where(item => item.CenterId == centerId && referenced.Contains(item.UserId))
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(user => user.CenterId, (int?)null)
+                    .SetProperty(user => user.IsActive, false)
+                    .SetProperty(user => user.RefreshTokenHash, (string?)null)
+                    .SetProperty(user => user.RefreshTokenExpiresAt, (DateTime?)null));
+
+            result.UsersDeleted = await _context.Users
+                .Where(item => item.CenterId == centerId && !referenced.Contains(item.UserId))
+                .ExecuteDeleteAsync();
+
+            await _context.CenterSettings
+                .Where(item => item.CenterId == centerId).ExecuteDeleteAsync();
+
+            await _context.Centers
+                .Where(item => item.CenterId == centerId).ExecuteDeleteAsync();
+
+            await transaction.CommitAsync();
+
+            return result;
+        }
+
 
 
 

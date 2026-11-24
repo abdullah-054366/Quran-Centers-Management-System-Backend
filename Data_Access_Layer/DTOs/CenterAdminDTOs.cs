@@ -1,4 +1,4 @@
-namespace Data_Access_Layer.DTOs;
+﻿namespace Data_Access_Layer.DTOs;
 
 public sealed class CenterNameDTO
 {
@@ -17,6 +17,24 @@ public sealed class CenterDeletionSummaryDTO
     public int MemorizationRecords { get; set; }
     public int Plans { get; set; }
     public bool CanDelete { get; set; }
+}
+
+/// <summary>ما حُذف فعلاً عند محو مركز بكل بياناته. عملية لا رجعة فيها.</summary>
+public sealed class CenterPurgeResultDTO
+{
+    public int CenterId { get; set; }
+    public string CenterName { get; set; } = string.Empty;
+    public int AttendanceRecords { get; set; }
+    public int MemorizationRecords { get; set; }
+    public int Plans { get; set; }
+    public int HalaqaStudents { get; set; }
+    public int Halaqat { get; set; }
+    public int Students { get; set; }
+    public int Teachers { get; set; }
+    public int UsersDeleted { get; set; }
+
+    /// <summary>حسابات بقيت لأنها أنشأت سجلات في مركز آخر: فُصلت عن المركز وعُطِّلت.</summary>
+    public int UsersDetached { get; set; }
 }
 
 public sealed class CenterHalaqaSummaryDTO

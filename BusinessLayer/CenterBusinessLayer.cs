@@ -80,6 +80,11 @@ namespace Business_Layer
             return await _centerData.DeleteCenter(centerId);
         }
 
+        public Task<CenterPurgeResultDTO?> PurgeCenterAsync(int centerId)
+        {
+            return _centerData.PurgeCenterAsync(centerId);
+        }
+
 
 
         public async Task<int> getCenterCount()

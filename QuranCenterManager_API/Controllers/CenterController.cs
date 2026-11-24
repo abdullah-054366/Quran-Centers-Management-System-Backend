@@ -254,6 +254,50 @@ namespace QuranCenterManager_API.Controllers
             return Ok();
         }
 
+        /// <summary>
+        /// محو المركز وكل بياناته. لا رجعة فيه، ونقطة منفصلة عن الحذف العادي
+        /// حتى لا يتحول الحذف الآمن إلى محو شامل بتغيير سلوكه.
+        /// </summary>
+        [HttpDelete("{id:int}/purge", Name = "PurgeCenter")]
+        [Authorize(Roles = "PlatformAdmin,Admin")]
+        public async Task<ActionResult> PurgeCenter(int id, [FromQuery] string? confirm)
+        {
+            if (id < 1)
+                return BadRequest("Invalid center ID.");
+
+            var center = await _business.GetCenterById(id);
+            if (center is null)
+                return NotFound();
+
+            // حاجزان قبل عملية لا رجعة فيها: المركز موقوف، والاسم مكتوب في الطلب.
+            if (center.IsActive)
+                return Conflict("أوقف المركز أولاً، ثم امحه. الإيقاف يكشف ما يتوقف قبل أن تختفي البيانات.");
+
+            if (!string.Equals(confirm?.Trim(), center.CenterName, StringComparison.Ordinal))
+                return BadRequest("أرسل اسم المركز في confirm لتأكيد المحو النهائي.");
+
+            try
+            {
+                var result = await _business.PurgeCenterAsync(id);
+                if (result is null)
+                    return NotFound();
+
+                var details = $"طلاب: {result.Students}، مدرسون: {result.Teachers}، حلقات: {result.Halaqat}، "
+                    + $"حضور: {result.AttendanceRecords}، حفظ: {result.MemorizationRecords}، خطط: {result.Plans}، "
+                    + $"حسابات محذوفة: {result.UsersDeleted}، حسابات مفصولة: {result.UsersDetached}";
+
+                // سجل التدقيق بلا مفاتيح أجنبية، فهذا السطر يبقى بعد زوال المركز.
+                await this.LogAuditAsync(_audit, "center.purge", "Center", id, result.CenterName, details);
+
+                return Ok(result);
+            }
+            catch (DbUpdateException)
+            {
+                // المعاملة تُرجَع كاملة، فلا يبقى نصف محو.
+                return Conflict("تعذر محو المركز: بقي ارتباط لم يشمله المحو. لم يُحذف شيء.");
+            }
+        }
+
         [HttpGet("Count", Name = "GetCenterCount")]
         [Authorize(Roles = "PlatformAdmin,Admin")]
         public async Task<ActionResult> getCenterCount()
